@@ -281,23 +281,137 @@ function updatePending() {
   document.getElementById('btnWa').style.display = hasData ? 'flex' : 'none';
 }
 
+let waPreviewData = null; // Stores the report data for confirmation
+
 /* ─── WhatsApp Report ─── */
 async function kirimWa() {
   const btn = document.getElementById('btnWa');
-  btn.disabled = true; btn.innerHTML = '⏳ Membuat laporan...';
+  btn.disabled = true; 
+  btn.innerHTML = '⏳ Membuat laporan...';
 
   try {
     const r = await api('generateReport', { date: todayDate });
-    btn.disabled = false; btn.innerHTML = '📱 Kirim WA';
+    btn.disabled = false; 
+    btn.innerHTML = '📱 Kirim WA';
     
     if (r.success) {
-      window.open(r.waUrl, '_blank');
-      toast('✅ Laporan tersimpan & WA dibuka');
+      waPreviewData = r; // Store for later
+      openWaModal(r);
     } else {
       toast('❌ Gagal: ' + (r.error || 'unknown'));
     }
   } catch (e) {
-    btn.disabled = false; btn.innerHTML = '📱 Kirim WA';
+    btn.disabled = false; 
+    btn.innerHTML = '📱 Kirim WA';
     toast('❌ Error: ' + e.message);
   }
+}
+
+function openWaModal(data) {
+  const modal = document.getElementById('waModal');
+  const listBox = document.getElementById('waPreviewList');
+  const summary = document.getElementById('waPreviewSummary');
+  const searchInput = document.getElementById('waSearchInput');
+  
+  // Reset search
+  searchInput.value = '';
+  
+  // Parse the waText into items for display
+  // The format is: "*Laporan Kehadiran 28 April 2026*\n\n*X DKV*\nBahlil - Izin\nJokowi - Sakit — Demam\n..."
+  const lines = data.waText.split('\n');
+  let currentKelas = '';
+  let items = [];
+  
+  for (let line of lines) {
+    line = line.trim();
+    if (!line || line.startsWith('*Laporan') || line === '—' || line.startsWith('Total siswa') || line.startsWith('Ketidakhadiran')) continue;
+    
+    if (line.startsWith('*') && line.endsWith('*') && !line.includes('•') && !line.includes('-')) {
+      // This is a kelas header
+      currentKelas = line.replace(/\*/g, '');
+    } else if (line.startsWith('•') || line.includes(' - ')) {
+      // This is a student entry
+      // Parse: "Bahlil - Izin" or "Jokowi - Sakit — Demam"
+      const cleanLine = line.replace(/^•\s*/, '');
+      const match = cleanLine.match(/^(.+?)\s+-\s+([A-Z]+)(?:\s+—\s+(.+))?$/);
+      if (match) {
+        items.push({
+          nama: match[1].trim(),
+          kelas: currentKelas,
+          status: match[2],
+          keterangan: match[3] || '',
+          fullLine: cleanLine
+        });
+      }
+    }
+  }
+  
+  // Store items for filtering
+  waPreviewData.items = items;
+  
+  // Render
+  renderWaPreview(items);
+  
+  // Summary
+  const totalKelas = [...new Set(items.map(i => i.kelas))].length;
+  summary.textContent = `${items.length} siswa • ${totalKelas} kelas`;
+  
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function renderWaPreview(items) {
+  const listBox = document.getElementById('waPreviewList');
+  
+  if (!items.length) {
+    listBox.innerHTML = '<div class="empty" style="padding:20px;">Tidak ada data ketidakhadiran</div>';
+    return;
+  }
+  
+  listBox.innerHTML = items.map((item, idx) => {
+    const bc = item.status === 'ALPHA' ? 'b-alpha' : item.status === 'SAKIT' ? 'b-sakit' : 'b-izin';
+    const ket = item.keterangan ? ` — ${escapeHtml(item.keterangan)}` : '';
+    return `
+      <div class="wa-preview-item" data-nama="${escapeHtml(item.nama.toLowerCase())}" data-idx="${idx}">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div class="nama">${escapeHtml(item.nama)}</div>
+            <div class="detail">${escapeHtml(item.kelas)}${ket}</div>
+          </div>
+          <span class="badge ${bc}">${item.status}</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function filterWaPreview() {
+  const query = document.getElementById('waSearchInput').value.toLowerCase().trim();
+  const items = document.querySelectorAll('.wa-preview-item');
+  
+  items.forEach(item => {
+    const nama = item.dataset.nama;
+    if (!query || nama.includes(query)) {
+      item.classList.remove('hidden');
+    } else {
+      item.classList.add('hidden');
+    }
+  });
+}
+
+function confirmWaSend() {
+  if (!waPreviewData) return;
+  
+  window.open(waPreviewData.waUrl, '_blank');
+  closeWaModal();
+  toast('✅ Laporan terkirim ke WhatsApp');
+}
+
+function closeWaModal() {
+  document.getElementById('waModal').classList.remove('open');
+  document.body.style.overflow = '';
+  waPreviewData = null;
+}
+
+function closeWaModalOut(e) {
+  if (e.target.id === 'waModal') closeWaModal();
 }
