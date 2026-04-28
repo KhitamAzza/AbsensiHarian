@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Absensi Harian</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <h1>Absensi Harian</h1>
+      <div class="date" id="currentDate">-</div>
+    </div>
+
+    <div class="status-card" id="statusCard">
+      <div class="status-icon load" id="statusIcon">⏳</div>
+      <div>
+        <div style="font-weight:700;" id="statusTitle">Memeriksa...</div>
+        <div style="font-size:0.85rem;color:#6b7280;" id="statusDesc">Sedang menyiapkan kolom hari ini</div>
+      </div>
+    </div>
+
+    <button class="btn btn-main" id="btnInput" disabled onclick="openModal()">
+      ✏️ Input Absensi
+    </button>
+
+    <div class="pending-box" id="pendingBox">
+      📦 <strong id="pendingCount">0</strong> data belum tersinkron. Tekan tombol hijau di bawah untuk kirim ke Spreadsheet.
+    </div>
+
+    <button class="btn btn-sync" id="btnSync" style="display:none;" onclick="syncData()">
+      📤 Submit Laporan
+    </button>
+    
+<button class="btn btn-wa" id="btnWa" style="display:none; background: #25d366;" onclick="kirimWa()">
+  📱 Kirim WA
+</button>
+
+    <div class="section-title">Sudah Diabsen Hari Ini</div>
+    <div id="listBox">
+      <div class="empty">Belum ada data absensi</div>
+    </div>
+  </div>
+
+  <div class="overlay" id="modal" onclick="closeModalOut(event)">
+    <div class="sheet" onclick="event.stopPropagation()">
+      <div class="sheet-header">
+        <h2>Input Absensi</h2>
+        <button class="x-btn" onclick="closeModal()">✕</button>
+      </div>
+
+      <div class="field">
+        <label>Nama</label>
+        <input type="text" id="inNama" placeholder="Ketik nama..." autocomplete="off"
+               oninput="filterNama()" onfocus="filterNama()">
+        <div class="suggest" id="suggest"></div>
+      </div>
+
+      <div class="field">
+        <label>Kelas</label>
+        <input type="text" id="inKelas" placeholder="-" disabled>
+      </div>
+
+      <div class="field">
+        <label>Status</label>
+        <select id="inStatus">
+          <option value="">Pilih status...</option>
+          <option value="ALPHA">ALPHA</option>
+          <option value="SAKIT">SAKIT</option>
+          <option value="IZIN">IZIN</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Keterangan <span style="font-weight:400;color:#9ca3af;">(opsional)</span></label>
+        <input type="text" id="inKet" placeholder="Contoh: demam, urusan keluarga...">
+      </div>
+
+      <button class="btn btn-main" onclick="saveLocal()">💾 Simpan ke Lokal</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
