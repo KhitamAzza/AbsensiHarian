@@ -32,6 +32,30 @@
     <button class="btn btn-sync" id="btnSync" style="display:none;" onclick="syncData()">
       📤 Submit Laporan
     </button>
+    <!-- WhatsApp Preview Modal -->
+<div class="overlay" id="waModal" onclick="closeWaModalOut(event)">
+  <div class="sheet wa-preview-sheet" onclick="event.stopPropagation()">
+    <div class="sheet-header">
+      <h2>Preview Laporan</h2>
+      <button class="x-btn" onclick="closeWaModal()">✕</button>
+    </div>
+    
+    <div class="wa-search-box">
+      <input type="text" id="waSearchInput" placeholder="Cari nama..." autocomplete="off" oninput="filterWaPreview()">
+    </div>
+    
+    <div class="wa-preview-list" id="waPreviewList">
+      <!-- Populated by JS -->
+    </div>
+    
+    <div class="wa-preview-footer">
+      <div class="wa-preview-summary" id="waPreviewSummary"></div>
+      <button class="btn btn-confirm" onclick="confirmWaSend()">
+        ✅ Data sudah benar
+      </button>
+    </div>
+  </div>
+</div>
     
 <button class="btn btn-wa" id="btnWa" style="display:none; background: #25d366;" onclick="kirimWa()">
   📱 Kirim WA
