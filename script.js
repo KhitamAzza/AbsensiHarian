@@ -119,26 +119,40 @@ async function syncData() {
       document.getElementById('suggest').classList.remove('open');
     }
 
-    /* ─── Predictive Nama ─── */
-    function filterNama() {
-      const v = document.getElementById('inNama').value.toLowerCase().trim();
-      const box = document.getElementById('suggest');
-      if (!v) { box.classList.remove('open'); return; }
-      const filtered = students.filter(s => s.nama.toLowerCase().includes(v));
-      if (!filtered.length) { box.classList.remove('open'); return; }
-      box.innerHTML = filtered.map(s =>
-        `<div class="suggest-item" onclick="pickNama('${s.nama}','${s.kelas}')">
-          ${s.nama}<span>• ${s.kelas}</span>
-        </div>`
-      ).join('');
-      box.classList.add('open');
-    }
+  /* ─── Predictive Nama ─── */
+function filterNama() {
+  const v = document.getElementById('inNama').value.toLowerCase().trim();
+  const box = document.getElementById('suggest');
+  if (!v) { box.classList.remove('open'); return; }
+  const filtered = students.filter(s => s.nama.toLowerCase().includes(v));
+  if (!filtered.length) { box.classList.remove('open'); return; }
+  
+  box.innerHTML = filtered.map((s, idx) =>
+    `<div class="suggest-item" data-nama="${escapeHtml(s.nama)}" data-kelas="${escapeHtml(s.kelas)}">
+      ${escapeHtml(s.nama)}<span>• ${escapeHtml(s.kelas)}</span>
+    </div>`
+  ).join('');
+  box.classList.add('open');
+}
 
-    function pickNama(nama, kelas) {
-      document.getElementById('inNama').value = nama;
-      document.getElementById('inKelas').value = kelas;
-      document.getElementById('suggest').classList.remove('open');
-    }
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Event delegation for suggest items — handles special chars safely
+document.getElementById('suggest').addEventListener('click', function(e) {
+  const item = e.target.closest('.suggest-item');
+  if (!item) return;
+  const nama = item.dataset.nama;
+  const kelas = item.dataset.kelas;
+  document.getElementById('inNama').value = nama;
+  document.getElementById('inKelas').value = kelas;
+  document.getElementById('suggest').classList.remove('open');
+});
+
+// Remove the old pickNama() function — no longer needed
 
     /* ─── Save to localStorage ─── */
     function saveLocal() {
@@ -161,51 +175,56 @@ async function syncData() {
       updatePending();
     }
 
-    /* ─── Render list ─── */
     function render() {
-      const key = LS(todayDate);
-      const local = JSON.parse(localStorage.getItem(key) || '{}');
-      const box = document.getElementById('listBox');
+  const key = LS(todayDate);
+  const local = JSON.parse(localStorage.getItem(key) || '{}');
+  const box = document.getElementById('listBox');
 
-      const merged = {};
-      sheetData.forEach(d => {
-        const p = d.value.split(' - ');
-        merged[d.nama] = { nama:d.nama, kelas:d.kelas, status:p[0], ket:p[1]||'', src:'sheet' };
-      });
-      for (const [n, item] of Object.entries(local)) {
-        merged[n] = { nama:n, kelas:item.kelas, status:item.status, ket:item.keterangan||'', src:'local' };
-      }
+  const merged = {};
+  sheetData.forEach(d => {
+    const p = d.value.split(' - ');
+    merged[d.nama] = { nama: d.nama, kelas: d.kelas, status: p[0], ket: p[1] || '', src: 'sheet' };
+  });
+  for (const [n, item] of Object.entries(local)) {
+    merged[n] = { nama: n, kelas: item.kelas, status: item.status, ket: item.keterangan || '', src: 'local' };
+  }
 
-      const items = Object.values(merged);
-      if (!items.length) {
-        box.innerHTML = '<div class="empty">Belum ada data absensi</div>'; return;
-      }
+  const items = Object.values(merged);
+  if (!items.length) {
+    box.innerHTML = '<div class="empty">Belum ada data absensi</div>';
+    return;
+  }
 
-      box.innerHTML = items.map(it => {
-        const bc = it.status==='ALPHA'?'b-alpha':it.status==='SAKIT'?'b-sakit':'b-izin';
-        const pending = it.src==='local' ? '<span class="pending-tag">PENDING</span>' : '';
-        const ket = it.ket ? `<div class="ket">${it.ket}</div>` : '';
-        return `
-          <div class="student-card" onclick="editStudent('${it.nama}','${it.kelas}','${it.status}','${it.ket}')">
-            <div class="student-info">
-              <h3>${it.nama} ${pending}</h3>
-              <div class="kelas">${it.kelas}</div>
-            </div>
-            <div class="student-status">
-              <span class="badge ${bc}">${it.status}</span>
-              ${ket}
-            </div>
-          </div>`;
-      }).join('');
-    }
+  box.innerHTML = items.map(it => {
+    const bc = it.status === 'ALPHA' ? 'b-alpha' : it.status === 'SAKIT' ? 'b-sakit' : 'b-izin';
+    const pending = it.src === 'local' ? '<span class="pending-tag">PENDING</span>' : '';
+    const ket = it.ket ? `<div class="ket">${escapeHtml(it.ket)}</div>` : '';
+    return `
+      <div class="student-card" data-nama="${escapeHtml(it.nama)}" data-kelas="${escapeHtml(it.kelas)}" data-status="${escapeHtml(it.status)}" data-ket="${escapeHtml(it.ket)}">
+        <div class="student-info">
+          <h3>${escapeHtml(it.nama)} ${pending}</h3>
+          <div class="kelas">${escapeHtml(it.kelas)}</div>
+        </div>
+        <div class="student-status">
+          <span class="badge ${bc}">${escapeHtml(it.status)}</span>
+          ${ket}
+        </div>
+      </div>`;
+  }).join('');
+}
 
-    function editStudent(nama, kelas, status, ket) {
-      document.getElementById('inNama').value = nama;
-      document.getElementById('inKelas').value = kelas;
-      document.getElementById('inStatus').value = status;
-      document.getElementById('inKet').value = ket || '';
-      openModal();
-    }
+// Event delegation for student cards
+document.getElementById('listBox').addEventListener('click', function(e) {
+  const card = e.target.closest('.student-card');
+  if (!card) return;
+  document.getElementById('inNama').value = card.dataset.nama;
+  document.getElementById('inKelas').value = card.dataset.kelas;
+  document.getElementById('inStatus').value = card.dataset.status;
+  document.getElementById('inKet').value = card.dataset.ket;
+  openModal();
+});
+
+// Remove the old editStudent() function — no longer needed
 
     function updatePending() {
   const key = LS(todayDate);
