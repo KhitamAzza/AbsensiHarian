@@ -1,5 +1,4 @@
-
-    // ═══════════════════════════════════════
+// ═══════════════════════════════════════
 // CONFIG: Replace with your GAS Web App URL
 // ═══════════════════════════════════════
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbxEOU-SnORm2EG6Na5mU0x-8VvH0YB32mkP52cey3JqlsS3hgFdSA2ddq-lB8Eg--y8/exec';
@@ -15,6 +14,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
   checkToday();
   loadStudents();
+  
+  // Setup event delegation for suggest dropdown
+  document.getElementById('suggest').addEventListener('click', function(e) {
+    const item = e.target.closest('.suggest-item');
+    if (!item) return;
+    document.getElementById('inNama').value = item.dataset.nama;
+    document.getElementById('inKelas').value = item.dataset.kelas;
+    document.getElementById('suggest').classList.remove('open');
+  });
+  
+  // Setup event delegation for student cards
+  document.getElementById('listBox').addEventListener('click', function(e) {
+    // Skip if clicking delete button
+    if (e.target.closest('.del-btn')) return;
+    
+    const card = e.target.closest('.student-card');
+    if (!card) return;
+    document.getElementById('inNama').value = card.dataset.nama;
+    document.getElementById('inKelas').value = card.dataset.kelas;
+    document.getElementById('inStatus').value = card.dataset.status;
+    document.getElementById('inKet').value = card.dataset.ket;
+    openModal();
+  });
+  
+  // Close suggest on outside click
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.field')) document.getElementById('suggest').classList.remove('open');
+  });
 });
 
 /* ─── API: ALL requests go through POST with action in body ─── */
@@ -83,43 +110,81 @@ async function syncData() {
     toast('❌ Error: ' + e.message);
   }
 }
-    /* ─── UI helpers ─── */
-    function setStatus(type, title, desc) {
-      const icon = document.getElementById('statusIcon');
-      icon.className = 'status-icon ' + (type==='ok'?'ok':type==='err'?'err':'load');
-      icon.textContent = type==='ok'?'✅':type==='err'?'❌':'⏳';
-      document.getElementById('statusTitle').textContent = title;
-      document.getElementById('statusDesc').textContent = desc;
-    }
 
-    function toast(msg) {
-      const t = document.getElementById('toast');
-      t.textContent = msg; t.classList.add('show');
-      setTimeout(() => t.classList.remove('show'), 2500);
-    }
+/* ─── Delete data ─── */
+async function hapusData(btn) {
+  const nama = btn.dataset.nama;
+  const src = btn.dataset.src;
+  
+  if (!confirm(`Hapus absensi untuk ${nama}?`)) return;
 
-    /* ─── Modal ─── */
-    function openModal() {
-      document.getElementById('modal').classList.add('open');
-      document.body.style.overflow = 'hidden';
-      setTimeout(() => document.getElementById('inNama').focus(), 100);
-    }
-    function closeModal() {
-      document.getElementById('modal').classList.remove('open');
-      document.body.style.overflow = '';
-      resetForm();
-    }
-    function closeModalOut(e) { if (e.target.id === 'modal') closeModal(); }
+  // Always remove from localStorage first
+  const key = LS(todayDate);
+  const local = JSON.parse(localStorage.getItem(key) || '{}');
+  if (local[nama]) {
+    delete local[nama];
+    localStorage.setItem(key, JSON.stringify(local));
+  }
 
-    function resetForm() {
-      document.getElementById('inNama').value = '';
-      document.getElementById('inKelas').value = '';
-      document.getElementById('inStatus').value = '';
-      document.getElementById('inKet').value = '';
-      document.getElementById('suggest').classList.remove('open');
+  // If synced to sheet, delete from sheet too
+  if (src === 'sheet') {
+    try {
+      const r = await api('deleteAttendance', { date: todayDate, nama: nama });
+      if (!r.success) {
+        toast('❌ Gagal hapus: ' + (r.error || 'unknown'));
+        return;
+      }
+    } catch (e) {
+      toast('❌ Error: ' + e.message);
+      return;
     }
+  }
 
-  /* ─── Predictive Nama ─── */
+  toast('✅ Data dihapus');
+  loadToday();
+}
+
+/* ─── UI helpers ─── */
+function setStatus(type, title, desc) {
+  const icon = document.getElementById('statusIcon');
+  icon.className = 'status-icon ' + (type==='ok'?'ok':type==='err'?'err':'load');
+  icon.textContent = type==='ok'?'✅':type==='err'?'❌':'⏳';
+  document.getElementById('statusTitle').textContent = title;
+  document.getElementById('statusDesc').textContent = desc;
+}
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+/* ─── Modal ─── */
+function openModal() {
+  document.getElementById('modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => document.getElementById('inNama').focus(), 100);
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+  document.body.style.overflow = '';
+  resetForm();
+}
+
+function closeModalOut(e) { 
+  if (e.target.id === 'modal') closeModal(); 
+}
+
+function resetForm() {
+  document.getElementById('inNama').value = '';
+  document.getElementById('inKelas').value = '';
+  document.getElementById('inStatus').value = '';
+  document.getElementById('inKet').value = '';
+  document.getElementById('suggest').classList.remove('open');
+}
+
+/* ─── Predictive Nama ─── */
 function filterNama() {
   const v = document.getElementById('inNama').value.toLowerCase().trim();
   const box = document.getElementById('suggest');
@@ -127,7 +192,7 @@ function filterNama() {
   const filtered = students.filter(s => s.nama.toLowerCase().includes(v));
   if (!filtered.length) { box.classList.remove('open'); return; }
   
-  box.innerHTML = filtered.map((s, idx) =>
+  box.innerHTML = filtered.map(s =>
     `<div class="suggest-item" data-nama="${escapeHtml(s.nama)}" data-kelas="${escapeHtml(s.kelas)}">
       ${escapeHtml(s.nama)}<span>• ${escapeHtml(s.kelas)}</span>
     </div>`
@@ -141,41 +206,29 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Event delegation for suggest items — handles special chars safely
-document.getElementById('suggest').addEventListener('click', function(e) {
-  const item = e.target.closest('.suggest-item');
-  if (!item) return;
-  const nama = item.dataset.nama;
-  const kelas = item.dataset.kelas;
-  document.getElementById('inNama').value = nama;
-  document.getElementById('inKelas').value = kelas;
-  document.getElementById('suggest').classList.remove('open');
-});
+/* ─── Save to localStorage ─── */
+function saveLocal() {
+  const nama = document.getElementById('inNama').value.trim();
+  const kelas = document.getElementById('inKelas').value.trim();
+  const status = document.getElementById('inStatus').value;
+  const ket = document.getElementById('inKet').value.trim();
 
-// Remove the old pickNama() function — no longer needed
+  if (!nama) { toast('Nama wajib diisi'); return; }
+  if (!status) { toast('Status wajib dipilih'); return; }
 
-    /* ─── Save to localStorage ─── */
-    function saveLocal() {
-      const nama = document.getElementById('inNama').value.trim();
-      const kelas = document.getElementById('inKelas').value.trim();
-      const status = document.getElementById('inStatus').value;
-      const ket = document.getElementById('inKet').value.trim();
+  const key = LS(todayDate);
+  const data = JSON.parse(localStorage.getItem(key) || '{}');
+  data[nama] = { status, keterangan: ket, kelas };
+  localStorage.setItem(key, JSON.stringify(data));
 
-      if (!nama) { toast('Nama wajib diisi'); return; }
-      if (!status) { toast('Status wajib dipilih'); return; }
+  toast('✅ Disimpan (lokal)');
+  closeModal();
+  render();
+  updatePending();
+}
 
-      const key = LS(todayDate);
-      const data = JSON.parse(localStorage.getItem(key) || '{}');
-      data[nama] = { status, keterangan: ket, kelas };
-      localStorage.setItem(key, JSON.stringify(data));
-
-      toast('✅ Disimpan (lokal)');
-      closeModal();
-      render();
-      updatePending();
-    }
-
-    function render() {
+/* ─── Render list ─── */
+function render() {
   const key = LS(todayDate);
   const local = JSON.parse(localStorage.getItem(key) || '{}');
   const box = document.getElementById('listBox');
@@ -196,37 +249,25 @@ document.getElementById('suggest').addEventListener('click', function(e) {
   }
 
   box.innerHTML = items.map(it => {
-  const bc = it.status === 'ALPHA' ? 'b-alpha' : it.status === 'SAKIT' ? 'b-sakit' : 'b-izin';
-  const pending = it.src === 'local' ? '<span class="pending-tag">PENDING</span>' : '';
-  const ket = it.ket ? `<div class="ket">${escapeHtml(it.ket)}</div>` : '';
-  return `
-    <div class="student-card" data-nama="${escapeHtml(it.nama)}" data-kelas="${escapeHtml(it.kelas)}" data-status="${escapeHtml(it.status)}" data-ket="${escapeHtml(it.ket)}" data-src="${it.src}">
-      <div class="student-info">
-        <h3>${escapeHtml(it.nama)} ${pending}</h3>
-        <div class="kelas">${escapeHtml(it.kelas)}</div>
-      </div>
-      <div class="student-status" style="display:flex;align-items:center;gap:8px;">
-        <span class="badge ${bc}">${escapeHtml(it.status)}</span>
-        ${ket}
-        <button class="del-btn" data-nama="${escapeHtml(it.nama)}" data-src="${it.src}" onclick="event.stopPropagation();hapusData(this)">🗑️</button>
-      </div>
-    </div>`;
-}).join('');
-        
-// Event delegation for student cards
-document.getElementById('listBox').addEventListener('click', function(e) {
-  const card = e.target.closest('.student-card');
-  if (!card) return;
-  document.getElementById('inNama').value = card.dataset.nama;
-  document.getElementById('inKelas').value = card.dataset.kelas;
-  document.getElementById('inStatus').value = card.dataset.status;
-  document.getElementById('inKet').value = card.dataset.ket;
-  openModal();
-});
+    const bc = it.status === 'ALPHA' ? 'b-alpha' : it.status === 'SAKIT' ? 'b-sakit' : 'b-izin';
+    const pending = it.src === 'local' ? '<span class="pending-tag">PENDING</span>' : '';
+    const ket = it.ket ? `<div class="ket">${escapeHtml(it.ket)}</div>` : '';
+    return `
+      <div class="student-card" data-nama="${escapeHtml(it.nama)}" data-kelas="${escapeHtml(it.kelas)}" data-status="${escapeHtml(it.status)}" data-ket="${escapeHtml(it.ket)}" data-src="${it.src}">
+        <div class="student-info">
+          <h3>${escapeHtml(it.nama)} ${pending}</h3>
+          <div class="kelas">${escapeHtml(it.kelas)}</div>
+        </div>
+        <div class="student-status" style="display:flex;align-items:center;gap:8px;">
+          <span class="badge ${bc}">${escapeHtml(it.status)}</span>
+          ${ket}
+          <button class="del-btn" data-nama="${escapeHtml(it.nama)}" data-src="${it.src}" onclick="event.stopPropagation();hapusData(this)">🗑️</button>
+        </div>
+      </div>`;
+  }).join('');
+}
 
-// Remove the old editStudent() function — no longer needed
-
-    function updatePending() {
+function updatePending() {
   const key = LS(todayDate);
   const local = JSON.parse(localStorage.getItem(key) || '{}');
   const n = Object.keys(local).length;
@@ -240,9 +281,6 @@ document.getElementById('listBox').addEventListener('click', function(e) {
   document.getElementById('btnWa').style.display = hasData ? 'flex' : 'none';
 }
 
-    document.addEventListener('click', e => {
-      if (!e.target.closest('.field')) document.getElementById('suggest').classList.remove('open');
-    });
 /* ─── WhatsApp Report ─── */
 async function kirimWa() {
   const btn = document.getElementById('btnWa');
