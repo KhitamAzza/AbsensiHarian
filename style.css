@@ -171,3 +171,20 @@
     max-height: 60vh;
   }
 }
+.del-btn {
+  background: #fee2e2;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.del-btn:active {
+  background: #fecaca;
+  transform: scale(0.95);
+}
