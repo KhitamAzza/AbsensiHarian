@@ -196,23 +196,23 @@ document.getElementById('suggest').addEventListener('click', function(e) {
   }
 
   box.innerHTML = items.map(it => {
-    const bc = it.status === 'ALPHA' ? 'b-alpha' : it.status === 'SAKIT' ? 'b-sakit' : 'b-izin';
-    const pending = it.src === 'local' ? '<span class="pending-tag">PENDING</span>' : '';
-    const ket = it.ket ? `<div class="ket">${escapeHtml(it.ket)}</div>` : '';
-    return `
-      <div class="student-card" data-nama="${escapeHtml(it.nama)}" data-kelas="${escapeHtml(it.kelas)}" data-status="${escapeHtml(it.status)}" data-ket="${escapeHtml(it.ket)}">
-        <div class="student-info">
-          <h3>${escapeHtml(it.nama)} ${pending}</h3>
-          <div class="kelas">${escapeHtml(it.kelas)}</div>
-        </div>
-        <div class="student-status">
-          <span class="badge ${bc}">${escapeHtml(it.status)}</span>
-          ${ket}
-        </div>
-      </div>`;
-  }).join('');
-}
-
+  const bc = it.status === 'ALPHA' ? 'b-alpha' : it.status === 'SAKIT' ? 'b-sakit' : 'b-izin';
+  const pending = it.src === 'local' ? '<span class="pending-tag">PENDING</span>' : '';
+  const ket = it.ket ? `<div class="ket">${escapeHtml(it.ket)}</div>` : '';
+  return `
+    <div class="student-card" data-nama="${escapeHtml(it.nama)}" data-kelas="${escapeHtml(it.kelas)}" data-status="${escapeHtml(it.status)}" data-ket="${escapeHtml(it.ket)}" data-src="${it.src}">
+      <div class="student-info">
+        <h3>${escapeHtml(it.nama)} ${pending}</h3>
+        <div class="kelas">${escapeHtml(it.kelas)}</div>
+      </div>
+      <div class="student-status" style="display:flex;align-items:center;gap:8px;">
+        <span class="badge ${bc}">${escapeHtml(it.status)}</span>
+        ${ket}
+        <button class="del-btn" data-nama="${escapeHtml(it.nama)}" data-src="${it.src}" onclick="event.stopPropagation();hapusData(this)">🗑️</button>
+      </div>
+    </div>`;
+}).join('');
+        
 // Event delegation for student cards
 document.getElementById('listBox').addEventListener('click', function(e) {
   const card = e.target.closest('.student-card');
