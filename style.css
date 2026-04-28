@@ -150,3 +150,24 @@
   color: white;
   box-shadow: 0 4px 12px rgba(37,211,102,0.25);
 }
+/* Mobile: shift sheet up so keyboard doesn't cover predictive text */
+@media (max-width: 640px) {
+  .overlay.open {
+    align-items: flex-start;
+    padding-top: 5vh;
+  }
+  .sheet {
+    max-height: 70vh;
+    border-radius: 16px 16px 0 0;
+  }
+}
+
+/* When input is focused, push sheet even higher on small screens */
+@media (max-width: 640px) and (max-height: 700px) {
+  .overlay.open {
+    padding-top: 2vh;
+  }
+  .sheet {
+    max-height: 60vh;
+  }
+}
