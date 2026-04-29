@@ -264,3 +264,27 @@
 .btn-confirm:disabled {
   opacity: 0.5;
 }
+.app-footer {
+  text-align: center;
+  padding: 24px 16px 32px;
+  margin-top: 8px;
+}
+
+.footer-line {
+  width: 40px;
+  height: 3px;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  border-radius: 2px;
+  margin: 0 auto 12px;
+}
+
+.app-footer p {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  letter-spacing: 0.02em;
+}
+
+.app-footer strong {
+  color: #6b7280;
+  font-weight: 600;
+}
