@@ -5,16 +5,24 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbxEOU-SnORm2EG6Na5mU0x-
 // ═══════════════════════════════════════
 
 const LS = d => `absensi_${d}`;
+const LSK = d => `absensi_kembali_${d}`;
 let students = [], todayDate = '', sheetData = [];
+let kembaliData = []; // Data from Absensi Kembali sheet
+let kembaliLocal = {}; // Local changes before sync
+let kembaliFilter = 'all'; // Current filter
+let kembaliAvailable = false; // Whether today's column exists
 
+// ═══════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
   const opt = { day:'numeric', month:'long', year:'numeric' };
   todayDate = new Date().toLocaleDateString('id-ID', opt);
   document.getElementById('currentDate').textContent = todayDate;
 
-  checkToday();
-  loadStudents();
-  
+  // Show loading overlay and fetch all data before showing app
+  initAppWithLoading();
+
   // Setup event delegation for suggest dropdown
   document.getElementById('suggest').addEventListener('click', function(e) {
     const item = e.target.closest('.suggest-item');
@@ -23,12 +31,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('inKelas').value = item.dataset.kelas;
     document.getElementById('suggest').classList.remove('open');
   });
-  
+
   // Setup event delegation for student cards
   document.getElementById('listBox').addEventListener('click', function(e) {
-    // Skip if clicking delete button
     if (e.target.closest('.del-btn')) return;
-    
     const card = e.target.closest('.student-card');
     if (!card) return;
     document.getElementById('inNama').value = card.dataset.nama;
@@ -37,14 +43,16 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('inKet').value = card.dataset.ket;
     openModal();
   });
-  
+
   // Close suggest on outside click
   document.addEventListener('click', e => {
     if (!e.target.closest('.field')) document.getElementById('suggest').classList.remove('open');
   });
 });
 
-/* ─── API: ALL requests go through POST with action in body ─── */
+// ═══════════════════════════════════════
+// API: ALL requests go through POST with action in body
+// ═══════════════════════════════════════
 async function api(action, payload = {}) {
   const res = await fetch(GAS_URL, {
     method: 'POST',
@@ -53,7 +61,47 @@ async function api(action, payload = {}) {
   return res.json();
 }
 
-/* ─── Data calls ─── */
+// ═══════════════════════════════════════
+// INIT APP - Load all data
+// ═══════════════════════════════════════
+async function initAppWithLoading() {
+  const loading = document.getElementById('loadingOverlay');
+  const subtext = document.getElementById('loadingSubtext');
+
+  try {
+    // Step 1: Check attendance column
+    subtext.textContent = 'Memeriksa kolom absensi...';
+    await checkToday();
+
+    // Step 2: Load student list
+    subtext.textContent = 'Memuat daftar siswa...';
+    await loadStudents();
+
+    // Step 3: Check and load absensi kembali
+    subtext.textContent = 'Memuat data absensi kembali...';
+    await initKembali();
+
+    // All done - hide loading
+    subtext.textContent = 'Siap!';
+    loading.classList.add('hidden');
+
+  } catch (e) {
+    console.error('Init error:', e);
+    subtext.textContent = 'Error: ' + e.message;
+    toast('❌ Error memuat data: ' + e.message);
+    // Still hide loading after a delay so user can see error
+    setTimeout(() => loading.classList.add('hidden'), 2000);
+  }
+}
+
+// Keep old initApp for compatibility (just calls the new one)
+async function initApp() {
+  return initAppWithLoading();
+}
+
+// ═══════════════════════════════════════
+// DATA CALLS - Attendance
+// ═══════════════════════════════════════
 async function checkToday() {
   try {
     const r = await api('checkToday');
@@ -82,6 +130,7 @@ async function loadToday() {
     sheetData = r.data || [];
     render();
     updatePending();
+    updateWaFabState();
   } catch (e) { console.error(e); }
 }
 
@@ -115,10 +164,9 @@ async function syncData() {
 async function hapusData(btn) {
   const nama = btn.dataset.nama;
   const src = btn.dataset.src;
-  
+
   if (!confirm(`Hapus absensi untuk ${nama}?`)) return;
 
-  // Always remove from localStorage first
   const key = LS(todayDate);
   const local = JSON.parse(localStorage.getItem(key) || '{}');
   if (local[nama]) {
@@ -126,7 +174,6 @@ async function hapusData(btn) {
     localStorage.setItem(key, JSON.stringify(local));
   }
 
-  // If synced to sheet, delete from sheet too
   if (src === 'sheet') {
     try {
       const r = await api('deleteAttendance', { date: todayDate, nama: nama });
@@ -144,7 +191,99 @@ async function hapusData(btn) {
   loadToday();
 }
 
-/* ─── UI helpers ─── */
+// ═══════════════════════════════════════
+// DATA CALLS - Absensi Kembali
+// ═══════════════════════════════════════
+async function initKembali() {
+  try {
+    // First check if today's column exists
+    const r = await api('checkTodayAbsensiKembali');
+    console.log('checkTodayAbsensiKembali response:', r);
+
+    if (r.available) {
+      kembaliAvailable = true;
+      await loadKembali();
+    } else {
+      console.error('Absensi Kembali not available:', r.error);
+      toast('⚠️ Sheet Absensi Kembali belum siap: ' + (r.error || 'Unknown error'));
+    }
+  } catch (e) {
+    console.error('initKembali error:', e);
+    toast('❌ Error memuat Absensi Kembali: ' + e.message);
+  }
+}
+
+async function loadKembali() {
+  try {
+    console.log('Loading kembali data for date:', todayDate);
+    const r = await api('getAbsensiKembali', { date: todayDate });
+    console.log('getAbsensiKembali response:', r);
+
+    if (r.success) {
+      kembaliData = r.data || [];
+      console.log('Kembali data loaded:', kembaliData.length, 'items');
+
+      // Merge with local changes
+      const localKey = LSK(todayDate);
+      kembaliLocal = JSON.parse(localStorage.getItem(localKey) || '{}');
+
+      updateKembaliBadge();
+      updateWaFabState();
+    } else {
+      console.error('getAbsensiKembali failed:', r.error);
+      toast('❌ Gagal memuat data kembali: ' + (r.error || 'Unknown'));
+    }
+  } catch (e) { 
+    console.error('loadKembali error:', e);
+    toast('❌ Error memuat data kembali: ' + e.message);
+  }
+}
+
+async function simpanKembali() {
+  const btn = document.getElementById('btnSimpanKembali');
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Menyimpan...';
+
+  try {
+    const payload = {};
+    // Merge sheet data with local changes
+    kembaliData.forEach(item => {
+      const kelas = item.kelas;
+      payload[kelas] = kembaliLocal[kelas] || item.status || 'BELUM';
+    });
+    // Also include any local-only changes
+    Object.entries(kembaliLocal).forEach(([kelas, status]) => {
+      if (!payload[kelas]) payload[kelas] = status;
+    });
+
+    console.log('Saving kembali data:', payload);
+    const r = await api('updateAbsensiKembali', { 
+      date: todayDate, 
+      attendance: payload 
+    });
+
+    btn.disabled = false;
+    btn.innerHTML = '💾 Simpan Data';
+
+    if (r.success) {
+      localStorage.removeItem(LSK(todayDate));
+      kembaliLocal = {};
+      toast('✅ Data absensi kembali tersimpan!');
+      closeKembaliModal();
+      await loadKembali(); // Refresh data
+    } else {
+      toast('❌ Gagal: ' + (r.error || 'unknown'));
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.innerHTML = '💾 Simpan Data';
+    toast('❌ Error: ' + e.message);
+  }
+}
+
+// ═══════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════
 function setStatus(type, title, desc) {
   const icon = document.getElementById('statusIcon');
   icon.className = 'status-icon ' + (type==='ok'?'ok':type==='err'?'err':'load');
@@ -159,7 +298,9 @@ function toast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-/* ─── Modal ─── */
+// ═══════════════════════════════════════
+// MODAL - Input Absensi
+// ═══════════════════════════════════════
 function openModal() {
   document.getElementById('modal').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -191,7 +332,7 @@ function filterNama() {
   if (!v) { box.classList.remove('open'); return; }
   const filtered = students.filter(s => s.nama.toLowerCase().includes(v));
   if (!filtered.length) { box.classList.remove('open'); return; }
-  
+
   box.innerHTML = filtered.map(s =>
     `<div class="suggest-item" data-nama="${escapeHtml(s.nama)}" data-kelas="${escapeHtml(s.kelas)}">
       ${escapeHtml(s.nama)}<span>• ${escapeHtml(s.kelas)}</span>
@@ -227,7 +368,9 @@ function saveLocal() {
   updatePending();
 }
 
-/* ─── Render list ─── */
+// ═══════════════════════════════════════
+// RENDER - Attendance List
+// ═══════════════════════════════════════
 function render() {
   const key = LS(todayDate);
   const local = JSON.parse(localStorage.getItem(key) || '{}');
@@ -271,38 +414,208 @@ function updatePending() {
   const key = LS(todayDate);
   const local = JSON.parse(localStorage.getItem(key) || '{}');
   const n = Object.keys(local).length;
-  
+
   document.getElementById('pendingCount').textContent = n;
   document.getElementById('pendingBox').classList.toggle('active', n > 0);
   document.getElementById('btnSync').style.display = n > 0 ? 'flex' : 'none';
-  
-  // Show WA button if there's any data (local or sheet)
-  const hasData = n > 0 || sheetData.length > 0;
-  document.getElementById('btnWa').style.display = hasData ? 'flex' : 'none';
 }
 
-let waPreviewData = null; // Stores the report data for confirmation
+// ═══════════════════════════════════════
+// MODAL - Absensi Kembali
+// ═══════════════════════════════════════
+function openKembaliModal() {
+  // Ensure data is loaded before showing
+  if (!kembaliData.length && kembaliAvailable) {
+    loadKembali().then(() => {
+      document.getElementById('kembaliModal').classList.add('open');
+      document.body.style.overflow = 'hidden';
+      renderKembaliList();
+    });
+  } else {
+    document.getElementById('kembaliModal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    renderKembaliList();
+  }
+}
 
-/* ─── WhatsApp Report ─── */
+function closeKembaliModal() {
+  document.getElementById('kembaliModal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function closeKembaliModalOut(e) {
+  if (e.target.id === 'kembaliModal') closeKembaliModal();
+}
+
+function renderKembaliList() {
+  const filterBox = document.getElementById('kembaliFilter');
+  const listBox = document.getElementById('kembaliList');
+
+  console.log('Rendering kembali list, data:', kembaliData);
+
+  // Hide filter box - no filters needed, show all
+  filterBox.style.display = 'none';
+
+  if (!kembaliData || kembaliData.length === 0) {
+    listBox.innerHTML = '<div class="kembali-empty">Memuat data kelas...</div>';
+    return;
+  }
+
+  // Group by grade for display (X, XI, XII sections)
+  const grouped = {};
+  kembaliData.forEach(item => {
+    if (!item.kelas) return;
+    // Extract first word as grade: "X DKV" → "X", "XI TSM" → "XI"
+    const grade = item.kelas.split(/\s/)[0] || 'Lainnya';
+    if (!grouped[grade]) grouped[grade] = [];
+    grouped[grade].push(item);
+  });
+
+  // Render grouped list - all classes visible, no filtering
+  let html = '';
+  Object.entries(grouped).forEach(([grade, items]) => {
+    html += `<div class="kembali-class-group">`;
+    html += `<div class="kembali-class-title">Kelas ${grade}</div>`;
+    items.forEach(item => {
+      // Use local value if exists, otherwise use sheet value
+      const status = kembaliLocal[item.kelas] || item.status || 'BELUM';
+      const isKembali = status === 'KEMBALI';
+      const className = isKembali ? 'kembali' : 'belum';
+      const statusText = isKembali ? 'Kembali' : 'Belum';
+
+      html += `
+        <div class="kembali-item ${className}" data-kelas="${escapeHtml(item.kelas)}" onclick="toggleKembaliStatus('${escapeHtml(item.kelas)}')">
+          <div class="kembali-item-name">${escapeHtml(item.kelas)}</div>
+          <div class="kembali-item-status">${statusText}</div>
+        </div>`;
+    });
+    html += `</div>`;
+  });
+
+  listBox.innerHTML = html;
+}
+
+function setKembaliFilter(grade) {
+  kembaliFilter = grade;
+  renderKembaliList();
+}
+
+function toggleKembaliStatus(kelas) {
+  // Get current status (from local or sheet)
+  const sheetItem = kembaliData.find(k => k.kelas === kelas);
+  const currentStatus = kembaliLocal[kelas] || sheetItem?.status || 'BELUM';
+
+  // Toggle
+  const newStatus = currentStatus === 'KEMBALI' ? 'BELUM' : 'KEMBALI';
+
+  // Save to local
+  kembaliLocal[kelas] = newStatus;
+  const localKey = LSK(todayDate);
+  localStorage.setItem(localKey, JSON.stringify(kembaliLocal));
+
+  // Re-render
+  renderKembaliList();
+  updateKembaliBadge();
+  updateWaFabState();
+}
+
+function updateKembaliBadge() {
+  // Count how many are BELUM (from sheet data, overridden by local)
+  let belumCount = 0;
+  kembaliData.forEach(item => {
+    if (!item.kelas) return;
+    const status = kembaliLocal[item.kelas] || item.status || 'BELUM';
+    if (status !== 'KEMBALI') belumCount++;
+  });
+
+  const badge = document.getElementById('kembaliBadge');
+  badge.textContent = belumCount;
+  badge.classList.toggle('hidden', belumCount === 0);
+}
+
+// ═══════════════════════════════════════
+// FAB - WhatsApp
+// ═══════════════════════════════════════
+function updateWaFabState() {
+  const fabWa = document.getElementById('fabWa');
+
+  // Check if all absensi kembali are marked as KEMBALI
+  let allKembali = true;
+  if (kembaliData.length === 0) {
+    allKembali = false; // No data yet, disable
+  } else {
+    kembaliData.forEach(item => {
+      if (!item.kelas) return;
+      const status = kembaliLocal[item.kelas] || item.status || 'BELUM';
+      if (status !== 'KEMBALI') allKembali = false;
+    });
+  }
+
+  // Also check if there's attendance data to send
+  const hasAttendance = sheetData.length > 0 || Object.keys(JSON.parse(localStorage.getItem(LS(todayDate)) || '{}')).length > 0;
+
+  if (allKembali && hasAttendance) {
+    fabWa.classList.add('active');
+    fabWa.disabled = false;
+  } else {
+    fabWa.classList.remove('active');
+    fabWa.disabled = !hasAttendance;
+  }
+}
+
+function handleWaClick() {
+  const fabWa = document.getElementById('fabWa');
+
+  // Check if all absensi kembali are marked as KEMBALI
+  let allKembali = true;
+  let belumKelas = [];
+
+  kembaliData.forEach(item => {
+    if (!item.kelas) return;
+    const status = kembaliLocal[item.kelas] || item.status || 'BELUM';
+    if (status !== 'KEMBALI') {
+      allKembali = false;
+      belumKelas.push(item.kelas);
+    }
+  });
+
+  if (!allKembali) {
+    if (belumKelas.length > 0) {
+      toast(`❌ Ada absensi belum kembali: ${belumKelas.join(', ')}`);
+    } else {
+      toast('❌ Ada absensi belum kembali');
+    }
+    return;
+  }
+
+  kirimWa();
+}
+
+// ═══════════════════════════════════════
+// WHATSAPP REPORT
+// ═══════════════════════════════════════
+let waPreviewData = null;
+
 async function kirimWa() {
-  const btn = document.getElementById('btnWa');
-  btn.disabled = true; 
-  btn.innerHTML = '⏳ Membuat laporan...';
+  const btn = document.getElementById('fabWa');
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="fab-icon">⏳</span>';
 
   try {
     const r = await api('generateReport', { date: todayDate });
-    btn.disabled = false; 
-    btn.innerHTML = '📱 Kirim WA';
-    
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+
     if (r.success) {
-      waPreviewData = r; // Store for later
+      waPreviewData = r;
       openWaModal(r);
     } else {
       toast('❌ Gagal: ' + (r.error || 'unknown'));
     }
   } catch (e) {
-    btn.disabled = false; 
-    btn.innerHTML = '📱 Kirim WA';
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
     toast('❌ Error: ' + e.message);
   }
 }
@@ -312,26 +625,20 @@ function openWaModal(data) {
   const listBox = document.getElementById('waPreviewList');
   const summary = document.getElementById('waPreviewSummary');
   const searchInput = document.getElementById('waSearchInput');
-  
-  // Reset search
+
   searchInput.value = '';
-  
-  // Parse the waText into items for display
-  // The format is: "*Laporan Kehadiran 28 April 2026*\n\n*X DKV*\nBahlil - Izin\nJokowi - Sakit — Demam\n..."
+
   const lines = data.waText.split('\n');
   let currentKelas = '';
   let items = [];
-  
+
   for (let line of lines) {
     line = line.trim();
     if (!line || line.startsWith('*Laporan') || line === '—' || line.startsWith('Total siswa') || line.startsWith('Ketidakhadiran')) continue;
-    
+
     if (line.startsWith('*') && line.endsWith('*') && !line.includes('•') && !line.includes('-')) {
-      // This is a kelas header
       currentKelas = line.replace(/\*/g, '');
     } else if (line.startsWith('•') || line.includes(' - ')) {
-      // This is a student entry
-      // Parse: "Bahlil - Izin" or "Jokowi - Sakit — Demam"
       const cleanLine = line.replace(/^•\s*/, '');
       const match = cleanLine.match(/^(.+?)\s+-\s+([A-Z]+)(?:\s+—\s+(.+))?$/);
       if (match) {
@@ -345,29 +652,25 @@ function openWaModal(data) {
       }
     }
   }
-  
-  // Store items for filtering
+
   waPreviewData.items = items;
-  
-  // Render
   renderWaPreview(items);
-  
-  // Summary
+
   const totalKelas = [...new Set(items.map(i => i.kelas))].length;
   summary.textContent = `${items.length} siswa • ${totalKelas} kelas`;
-  
+
   modal.classList.add('open');
   document.body.style.overflow = 'hidden';
 }
 
 function renderWaPreview(items) {
   const listBox = document.getElementById('waPreviewList');
-  
+
   if (!items.length) {
     listBox.innerHTML = '<div class="empty" style="padding:20px;">Tidak ada data ketidakhadiran</div>';
     return;
   }
-  
+
   listBox.innerHTML = items.map((item, idx) => {
     const bc = item.status === 'ALPHA' ? 'b-alpha' : item.status === 'SAKIT' ? 'b-sakit' : 'b-izin';
     const ket = item.keterangan ? ` — ${escapeHtml(item.keterangan)}` : '';
@@ -387,7 +690,7 @@ function renderWaPreview(items) {
 function filterWaPreview() {
   const query = document.getElementById('waSearchInput').value.toLowerCase().trim();
   const items = document.querySelectorAll('.wa-preview-item');
-  
+
   items.forEach(item => {
     const nama = item.dataset.nama;
     if (!query || nama.includes(query)) {
@@ -400,7 +703,7 @@ function filterWaPreview() {
 
 function confirmWaSend() {
   if (!waPreviewData) return;
-  
+
   window.open(waPreviewData.waUrl, '_blank');
   closeWaModal();
   toast('✅ Laporan terkirim ke WhatsApp');
