@@ -163,8 +163,8 @@
       box-sizing: border-box;
     }
     .fab {
-      width: 90px;
-      height: 90px;
+      width: 65px;
+      height: 65px;
       border-radius: 50%;
       border: none;
       cursor: pointer;
@@ -195,8 +195,8 @@
       font-size: 1.6rem;
     }
     .fab-icon-img {
-      width: 70px;
-      height: 70px;
+      width: 50px;
+      height: 50px;
       object-fit: contain;
       display: block;
     }
