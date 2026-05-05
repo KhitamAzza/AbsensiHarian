@@ -580,11 +580,7 @@ function handleWaClick() {
   });
 
   if (!allKembali) {
-    if (belumKelas.length > 0) {
-      toast(`❌ Ada absensi belum kembali: ${belumKelas.join(', ')}`);
-    } else {
-      toast('❌ Ada absensi belum kembali');
-    }
+    toast('❌ Ada absensi belum kembali');
     return;
   }
 
