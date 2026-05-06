@@ -627,6 +627,7 @@ function openWaModal(data) {
   const lines = data.waText.split('\n');
   let currentKelas = '';
   let items = [];
+  let nihilCount = 0;
 
   for (let line of lines) {
     line = line.trim();
@@ -634,6 +635,17 @@ function openWaModal(data) {
 
     if (line.startsWith('*') && line.endsWith('*') && !line.includes('•') && !line.includes('-')) {
       currentKelas = line.replace(/\*/g, '');
+    } else if (line === '_NIHIL_') {
+      // Add NIHIL entry for this kelas
+      items.push({
+        nama: 'NIHIL',
+        kelas: currentKelas,
+        status: 'NIHIL',
+        keterangan: '',
+        fullLine: 'NIHIL',
+        isNihil: true
+      });
+      nihilCount++;
     } else if (line.startsWith('•') || line.includes(' - ')) {
       const cleanLine = line.replace(/^•\s*/, '');
       const match = cleanLine.match(/^(.+?)\s+-\s+([A-Z]+)(?:\s+—\s+(.+))?$/);
@@ -653,7 +665,8 @@ function openWaModal(data) {
   renderWaPreview(items);
 
   const totalKelas = [...new Set(items.map(i => i.kelas))].length;
-  summary.textContent = `${items.length} siswa • ${totalKelas} kelas`;
+  const absenCount = items.filter(i => !i.isNihil).length;
+  summary.textContent = `${absenCount} siswa tidak hadir • ${nihilCount} kelas NIHIL • ${totalKelas} total kelas`;
 
   modal.classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -668,6 +681,20 @@ function renderWaPreview(items) {
   }
 
   listBox.innerHTML = items.map((item, idx) => {
+    // NIHIL styling - green checkmark
+    if (item.isNihil) {
+      return `
+        <div class="wa-preview-item" data-nama="nihil" data-idx="${idx}">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div class="nama" style="color:#10b981;font-style:italic;">✓ NIHIL</div>
+              <div class="detail">${escapeHtml(item.kelas)} — Tidak ada ketidakhadiran</div>
+            </div>
+            <span class="badge b-kembali">NIHIL</span>
+          </div>
+        </div>`;
+    }
+
     const bc = item.status === 'ALPHA' ? 'b-alpha' : item.status === 'SAKIT' ? 'b-sakit' : 'b-izin';
     const ket = item.keterangan ? ` — ${escapeHtml(item.keterangan)}` : '';
     return `
